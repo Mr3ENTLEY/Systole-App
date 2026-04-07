@@ -16,6 +16,7 @@ struct LightDetailView: View {
     @State private var brightness: Double
     @State private var selectedColor: Color
     @State private var isSending = false
+    @State private var showColorPicker = false
 
     let presets: [(name: String, hue: Int, sat: Int, color: Color)] = [
         ("Warm White",  6000,  50,  Color(hue: 0.09, saturation: 0.3,  brightness: 1)),
@@ -27,7 +28,6 @@ struct LightDetailView: View {
         ("Cyan",        36000, 254, Color(hue: 0.5, saturation: 1, brightness: 1)),
         ("Blue",        46000, 254, .blue),
         ("Purple",      50000, 254, .purple),
-        ("Pink",        56000, 254, .pink),
     ]
 
     init(light: HueLight, onUpdate: @escaping () -> Void) {
@@ -44,7 +44,7 @@ struct LightDetailView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 28) {
+            VStack(spacing: 20) {
 
                 // Light preview circle
                 ZStack {
@@ -61,67 +61,51 @@ struct LightDetailView: View {
                 .animation(.easeInOut(duration: 0.3), value: isOn)
                 .animation(.easeInOut(duration: 0.3), value: selectedColor)
 
-                // Power toggle
-                HStack {
-                    Text("Power")
-                        .font(.headline)
-                    Spacer()
-                    Toggle("", isOn: $isOn)
-                        .labelsHidden()
-                        .onChange(of: isOn) { _, newValue in
-                            Task { await sendState(["on": newValue]) }
-                        }
-                }
-                .padding()
-                .background(Color(.secondarySystemBackground))
-                .cornerRadius(12)
-
-                // Brightness slider
-                VStack(alignment: .leading, spacing: 10) {
+                // Power + Brightness combined card
+                VStack(spacing: 16) {
                     HStack {
-                        Text("Brightness")
+                        Text("Power")
                             .font(.headline)
                         Spacer()
-                        Text("\(Int(brightness * 100))%")
-                            .foregroundColor(.secondary)
-                    }
-                    HStack {
-                        Image(systemName: "sun.min")
-                            .foregroundColor(.secondary)
-                        Slider(value: $brightness, in: 0.01...1.0)
-                            .accentColor(selectedColor)
-                            .onChange(of: brightness) { _, newValue in
-                                Task { await sendState(["bri": Int(newValue * 254)]) }
+                        Toggle("", isOn: $isOn)
+                            .labelsHidden()
+                            .onChange(of: isOn) { _, newValue in
+                                Task { await sendState(["on": newValue]) }
                             }
-                        Image(systemName: "sun.max.fill")
-                            .foregroundColor(.secondary)
+                    }
+
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Text("Brightness")
+                                .font(.headline)
+                            Spacer()
+                            Text("\(Int(brightness * 100))%")
+                                .foregroundColor(.secondary)
+                        }
+                        HStack {
+                            Image(systemName: "sun.min")
+                                .foregroundColor(.secondary)
+                            Slider(value: $brightness, in: 0.01...1.0)
+                                .accentColor(selectedColor)
+                                .onChange(of: brightness) { _, newValue in
+                                    Task { await sendState(["bri": Int(newValue * 254)]) }
+                                }
+                            Image(systemName: "sun.max.fill")
+                                .foregroundColor(.secondary)
+                        }
                     }
                 }
                 .padding()
                 .background(Color(.secondarySystemBackground))
                 .cornerRadius(12)
 
-                // Color picker
-                VStack(alignment: .leading, spacing: 10) {
+                // Presets + Color Picker combined card
+                VStack(alignment: .leading, spacing: 12) {
                     Text("Color")
                         .font(.headline)
-                    ColorPicker("Pick a color", selection: $selectedColor, supportsOpacity: false)
-                        .labelsHidden()
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .scaleEffect(1.4)
-                        .frame(height: 50)
-                        .onChange(of: selectedColor) { _, newColor in
-                            Task { await sendColorFromSwiftUI(newColor) }
-                        }
-                }
-                .padding()
-                .background(Color(.secondarySystemBackground))
-                .cornerRadius(12)
 
-                // Preset swatches
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Presets")
-                        .font(.headline)
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 5), spacing: 12) {
                         ForEach(presets, id: \.name) { preset in
                             VStack(spacing: 4) {
@@ -146,6 +130,43 @@ struct LightDetailView: View {
                                     .foregroundColor(.secondary)
                                     .lineLimit(1)
                             }
+                        }
+
+                        // Custom color picker wheel
+                        VStack(spacing: 4) {
+                            Circle()
+                                .fill(
+                                    AngularGradient(
+                                        colors: [.red, .yellow, .green, .cyan, .blue, .purple, .pink, .red],
+                                        center: .center
+                                    )
+                                )
+                                .frame(width: 44, height: 44)
+                                .shadow(color: .white.opacity(0.2), radius: 4)
+                                .onTapGesture {
+                                    showColorPicker = true
+                                }
+                            Text("Custom")
+                                .font(.system(size: 9))
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
+                        .sheet(isPresented: $showColorPicker) {
+                            VStack(spacing: 24) {
+                                Text("Custom Color")
+                                    .font(.headline)
+                                ColorPicker("Pick a color", selection: $selectedColor, supportsOpacity: false)
+                                    .labelsHidden()
+                                    .scaleEffect(2)
+                                    .frame(height: 100)
+                                    .onChange(of: selectedColor) { _, newColor in
+                                        Task { await sendColorFromSwiftUI(newColor) }
+                                    }
+                                Button("Done") { showColorPicker = false }
+                                    .buttonStyle(.borderedProminent)
+                            }
+                            .padding(40)
+                            .presentationDetents([.height(280)])
                         }
                     }
                 }
@@ -174,7 +195,6 @@ struct LightDetailView: View {
             print("Failed to send state: \(error)")
         }
     }
-
     func sendColorFromSwiftUI(_ color: Color) async {
         let ui = UIColor(color)
         var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0

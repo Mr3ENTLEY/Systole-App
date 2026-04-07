@@ -5,7 +5,7 @@
 
 import SwiftUI
 
-struct HueLight: Identifiable {
+struct HueLight: Identifiable, Equatable {
     let id: String
     var name: String
     var on: Bool
@@ -25,42 +25,55 @@ struct LightsView: View {
     var body: some View {
         Group {
             if isLoading {
-                ProgressView("Loading lights...")
+                VStack(spacing: 12) {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                    Text("Loading lights…")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error = errorMessage {
                 VStack(spacing: 12) {
                     Image(systemName: "exclamationmark.triangle")
                         .font(.largeTitle)
-                        .foregroundColor(.blue)
+                        .foregroundStyle(.blue)
                     Text(error)
                         .multilineTextAlignment(.center)
-                    Button("Retry") { Task { await fetchLights() } }
-                        .buttonStyle(.borderedProminent)
+                        .foregroundStyle(.secondary)
+                    Button {
+                        Task { await fetchLights() }
+                    } label: {
+                        Label("Retry", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.borderedProminent)
                 }
+                .padding(20)
+                .background(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(.thinMaterial)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(Color(.separator), lineWidth: 0.5)
+                )
                 .padding()
             } else {
                 ScrollView {
-                    VStack(spacing: 16) {
-                        ForEach(lights) { light in
-                            NavigationLink(destination: LightDetailView(light: light, onUpdate: {
-                                Task { await fetchLights() }
-                            })) {
-                                Card(
-                                    icon: light.on ? "lightbulb.fill" : "lightbulb",
-                                    title: light.name,
-                                    color: light.on ? hueColor(light) : .gray
-                                )
-                                .overlay(
-                                    HStack {
-                                        Spacer()
-                                        Image(systemName: "chevron.right")
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    .padding(.trailing, 12)
-                                )
+                    VStack(alignment: .leading, spacing: 12) {
+                        VStack(spacing: 12) {
+                            ForEach(lights) { light in
+                                LightRow(light: light) {
+                                    Task { await fetchLights() }
+                                }
                             }
                         }
+                        .animation(.snappy, value: lights)
                     }
-                    .padding()
+                    .padding(20)
+                }
+                .refreshable {
+                    await fetchLights()
                 }
             }
         }
@@ -81,17 +94,20 @@ struct LightsView: View {
                 }
             }
         }
+        .background(
+            LinearGradient(
+                colors: [Color(.systemBackground), Color(.secondarySystemBackground)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
+        .ignoresSafeArea(edges: .bottom)
         .task {
             await fetchLights()
         }
     }
 
-    func hueColor(_ light: HueLight) -> Color {
-        Color(hue: Double(light.hue) / 65535.0,
-              saturation: Double(light.saturation) / 254.0,
-              brightness: 1.0)
-    }
-
+    @MainActor
     func fetchLights() async {
         isLoading = true
         errorMessage = nil
@@ -120,11 +136,37 @@ struct LightsView: View {
     }
 }
 
-#Preview {
-    NavigationStack {
-        LightsView()
+// MARK: - LightRow
+
+private struct LightRow: View {
+    let light: HueLight
+    let onUpdate: () -> Void
+
+    var body: some View {
+        NavigationLink(destination: LightDetailView(light: light, onUpdate: onUpdate)) {
+            Card(
+                icon: light.on ? "lightbulb.fill" : "lightbulb",
+                title: light.name,
+                color: light.on ? hueColor(light) : .gray
+            )
+            .overlay(alignment: .trailing) {
+                Image(systemName: "chevron.right")
+                    .foregroundStyle(.tertiary)
+                    .padding(.trailing, 12)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    func hueColor(_ light: HueLight) -> Color {
+        Color(hue: Double(light.hue) / 65535.0,
+              saturation: Double(light.saturation) / 254.0,
+              brightness: 1.0)
     }
 }
+
+// MARK: - Card
+
 struct Card: View {
     let icon: String
     let title: String
@@ -136,16 +178,11 @@ struct Card: View {
                 .font(.system(size: 28, weight: .semibold))
                 .foregroundStyle(color)
                 .frame(width: 44, height: 44)
-                .background(
-                    Circle()
-                        .fill(color.opacity(0.15))
-                )
 
             Text(title)
                 .font(.headline)
                 .foregroundStyle(.primary)
-
-            Spacer()
+                .frame(maxWidth: .infinity, alignment: .center)
         }
         .padding(16)
         .background(
@@ -157,5 +194,13 @@ struct Card: View {
                 .strokeBorder(Color(.separator), lineWidth: 0.5)
         )
         .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 4)
+    }
+}
+
+// MARK: - Preview
+
+#Preview {
+    NavigationStack {
+        LightsView()
     }
 }
